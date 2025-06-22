@@ -4,7 +4,19 @@
   <title>MH Tessler</title>
   <!-- Use Bootswatch Cerulean theme -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.2.3/dist/cerulean/bootstrap.min.css">
+
+  <style>
+    /*--- publications look & feel -------------------------------------------*/
+    .pub-list a.title-link        { text-decoration: none; }          /* 1 */
+    .pub-list a.bib-toggle        { font-size: .85rem; margin-left:.4rem; }
+    .pub-list pre.bibtex          { background:#f8f9fa; padding:.6rem 1rem;
+                                    border:1px solid #ddd; border-radius:.4rem; }
+    .pub-year   { margin-top: 2.5rem; }        /* space before each new year   */
+    .pub-list   { margin-left: 1.25rem; }       /* indent bullets nicely        */
+    .pub-list li{ margin-bottom: .6rem; }        /* breathing room between items */
+  </style>
 </head>
+
 <body>
   <div class="container my-5">
     <!-- The converted Markdown content -->

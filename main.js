@@ -95,55 +95,126 @@ window.onload = function() {
         const entries = bibtexParser.entries;
         console.log("Parsed BibTeX Entries:", entries);
 
-        // --- Generate HTML from the parsed entries ---
-        let htmlOutput = '<h2>Publications</h2>';
-        const entryKeys = Object.keys(entries); // Get keys to check if empty
+        // -------------------------------------------------------------------------
+        // Group entries by YEAR, newest first, then render as bulleted lists
+        // -------------------------------------------------------------------------
+        function formatEntry(e, citeKey) {
+          const bibId = `bib-${citeKey}`;   // unique per item
 
-        if (entryKeys.length === 0) {
-            htmlOutput += '<p>No publications found.</p>';
-            console.warn("Parsing finished, but no BibTeX entries were extracted.");
-        } else {
-            htmlOutput += '<ul class="list-group">'; // Use Bootstrap list group for styling
+          //-----------------------------------------------------------------------
+          // 1. helpers
+          //-----------------------------------------------------------------------
+          const MY_LASTNAME = 'tessler';       // <— change once if your name changes
 
-            // Iterate over the entries object
-            for (const key of entryKeys) { // Iterate using the keys
-              const entry = entries[key];
-              htmlOutput += `<li class="list-group-item">`;
-              // Basic formatting example - adapt as needed!
-              // htmlOutput += `<strong>${key}</strong>: `; // Optionally display the citation key
+          // build “Tolkien, J. R. R.” → (bold) + ★ if it’s you
+          // ── Helpers ───────────────────────────────────────────────────────────────
+          function nameToInitials(raw) {
+            raw = raw.trim();
 
-              if (entry.AUTHOR) {
-                htmlOutput += `${entry.AUTHOR}. `;
-              }
-              if (entry.TITLE) {
-                const title = entry.TITLE.replace(/[\{\}]/g, ''); // Remove extra curly braces
-                htmlOutput += `<em>${title}</em>. `;
-              }
-              if (entry.JOURNAL) {
-                htmlOutput += `${entry.JOURNAL}, `;
-              }
-               if (entry.BOOKTITLE) {
-                   const booktitle = entry.BOOKTITLE.replace(/[\{\}]/g, ''); // Remove extra curly braces
-                   htmlOutput += `In <em>${booktitle}</em>, `;
-              }
-              if (entry.YEAR) {
-                htmlOutput += `${entry.YEAR}. `;
-              }
-              // Add more fields as needed (e.g., URL, DOI)
-               if (entry.URL) {
-                   htmlOutput += ` <a href="${entry.URL}" target="_blank">[Link]</a>`;
-               }
-               if (entry.DOI) {
-                   htmlOutput += ` <a href="https://doi.org/${entry.DOI}" target="_blank">[DOI]</a>`;
-               }
-              // Add other fields like pages, volume, publisher etc.
-              htmlOutput += `</li>`;
+            // ❶ Joint-authorship marker
+            let isJoint = false;
+            if (raw.startsWith('*')) {
+              isJoint = true;
+              raw = raw.slice(1).trim();        // strip the leading asterisk
             }
-            htmlOutput += '</ul>';
+
+            // ❷ Split "Last, First" vs "First Last"
+            let last, given;
+            if (raw.includes(',')) {
+              [last, given] = raw.split(',').map(s => s.trim());
+            } else {
+              const parts = raw.split(/\s+/);
+              last  = parts.pop();
+              given = parts.join(' ');
+            }
+
+            // ❸ Build initials
+            const initials = given
+              .split(/\s+/).filter(Boolean)
+              .map(n => n[0].toUpperCase() + '.')
+              .join(' ');
+
+            let formatted = `${last}, ${initials}`;
+
+            // ❹ Bold *your* surname
+            if (last.toLowerCase() === 'tessler') {
+              formatted = `<strong>${formatted}</strong>`;
+            }
+
+            // ❺ Append joint-authorship mark if needed
+            if (isJoint) {
+              formatted += '<sup>*</sup>';
+            }
+            return formatted;
+          }
+
+
+          function formatAuthors(str){
+            const names=str.split(/\s+and\s+/i).map(nameToInitials);
+            return names.length<2 ? names[0] : names.slice(0,-1).join(', ')+' & '+names.slice(-1);
+          }
+
+          // turn this entry back into a compact BibTeX block for the [bib] reveal
+          function toBibtex(obj) {
+            const fieldLines = Object.entries(obj)
+              .filter(([k]) => !k.startsWith('_'))  // skip parser metadata if any
+              .map(([k,v]) => `  ${k.toLowerCase()} = {${v}},`);
+            return `@${obj.ENTRYTYPE || 'article'}{${citeKey},\n${fieldLines.join('\n')}\n}`;
+          }
+
+          //-----------------------------------------------------------------------
+          // 2. assemble HTML
+          //-----------------------------------------------------------------------
+          const url   = e.URL || e.url || '';
+          const title = (e.TITLE||'').replace(/[{}]/g,'');
+          const titleHTML = url
+              ? `<a href="${url}" target="_blank" class="title-link">${title}.</a>`
+              : `${title}.`;
+
+          const authorsHTML = e.AUTHOR ? ` ${formatAuthors(e.AUTHOR)}.` : '';
+          const yearHTML    = e.YEAR   ? ` (${e.YEAR}).`                : '';
+          const journalSrc  = e.JOURNAL || e.BOOKTITLE || '';
+          const journalHTML = journalSrc ? ` <em>${journalSrc.replace(/[{}]/g,'')}</em>.` : '';
+          const doiHTML     = e.DOI ? ` <a href="https://doi.org/${e.DOI}" target="_blank">[doi]</a>` : '';
+
+          // [bib] toggle (3)
+          // const bibId   = `bib-${citeKey}`;
+          const bibHTML = `<a href="#" class="bib-toggle" data-id="${bibId}">[bib]</a>`
+                        + `<pre id="${bibId}" class="bibtex d-none">${toBibtex(e)}</pre>`;
+
+          return `${titleHTML}${authorsHTML}${yearHTML}${journalHTML}${doiHTML} ${bibHTML}`;
         }
 
-        // Set the generated HTML to the publications div
+
+
+        // ---- build the HTML ------------------------------------------------------
+        const entriesArr = Object.values(entries);
+
+        // sort newest-first
+        entriesArr.sort((a, b) => (b.YEAR || 0) - (a.YEAR || 0));
+
+        // bucket by year
+        const byYear = {};
+        entriesArr.forEach(e => {
+          const y = e.YEAR || 'Other';
+          (byYear[y] ||= []).push(e);
+        });
+        // render
+        let htmlOutput = '<h2>Publications</h2>';
+        let idx = 0;  // running unique index for IDs
+        Object.keys(byYear)
+              .sort((a, b) => b - a)                 // newest year first
+              .forEach(year => {
+                htmlOutput += `<h3 class="pub-year">${year}</h3><ul class="pub-list">`;
+                byYear[year].forEach(e => {
+                  htmlOutput += `<li>${formatEntry(e, idx)}</li>`;
+                  idx += 1;                          // bump index
+                });
+                htmlOutput += '</ul>';
+              });
+
         document.getElementById('publications').innerHTML = htmlOutput;
+
 
       })
       .catch(error => {
@@ -151,3 +222,14 @@ window.onload = function() {
           document.getElementById('publications').innerHTML = `<p class="text-danger">Failed to load or process publications: ${error.message}</p>`;
       });
   };
+
+  // -------------------------------------------------------------------------
+  // Toggle raw BibTeX blocks
+  // -------------------------------------------------------------------------
+  document.addEventListener('click', ev => {
+    const t = ev.target;
+    if (t.classList.contains('bib-toggle')) {
+      ev.preventDefault();
+      document.getElementById(t.dataset.id)?.classList.toggle('d-none');
+    }
+  });
